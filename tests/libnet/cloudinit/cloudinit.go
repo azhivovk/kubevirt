@@ -22,6 +22,7 @@ package cloudinit
 import (
 	"fmt"
 
+	"kubevirt.io/kubevirt/tests/flags"
 	"kubevirt.io/kubevirt/tests/libnet/cluster"
 	"kubevirt.io/kubevirt/tests/libnet/dns"
 
@@ -203,14 +204,25 @@ func CreateDefaultCloudInitNetworkData() string {
 		panic(errV6)
 	}
 
+	useBindingPluginNetworking := flags.PrimaryNetworkBindingPlugin != ""
+
 	var ifaceOpts []NetworkDataInterfaceOption
 	switch {
-	case supportsIPv4 && supportsIPv6: // DHCPv4 + static IPv6 + gateway6
-		ifaceOpts = []NetworkDataInterfaceOption{
-			WithDHCP4Enabled(),
-			WithAddresses(DefaultIPv6CIDR),
-			WithGateway6(DefaultIPv6Gateway),
-			WithNameserverFromCluster(),
+	case supportsIPv4 && supportsIPv6:
+		if useBindingPluginNetworking {
+			ifaceOpts = []NetworkDataInterfaceOption{
+				WithDHCP4Enabled(),
+				WithDHCP6Enabled(),
+				WithNameserverFromCluster(),
+			}
+		} else {
+			// Masquerade: DHCPv4 + static IPv6 + gateway6
+			ifaceOpts = []NetworkDataInterfaceOption{
+				WithDHCP4Enabled(),
+				WithAddresses(DefaultIPv6CIDR),
+				WithGateway6(DefaultIPv6Gateway),
+				WithNameserverFromCluster(),
+			}
 		}
 	case supportsIPv4: // DHCPv4 only
 		ifaceOpts = []NetworkDataInterfaceOption{
@@ -218,12 +230,21 @@ func CreateDefaultCloudInitNetworkData() string {
 			WithDHCP6Disabled(),
 			WithNameserverFromCluster(),
 		}
-	case supportsIPv6: // static IPv6 + gateway6
-		ifaceOpts = []NetworkDataInterfaceOption{
-			WithDHCP4Disabled(),
-			WithAddresses(DefaultIPv6CIDR),
-			WithGateway6(DefaultIPv6Gateway),
-			WithNameserverFromCluster(),
+	case supportsIPv6:
+		if useBindingPluginNetworking {
+			ifaceOpts = []NetworkDataInterfaceOption{
+				WithDHCP4Disabled(),
+				WithDHCP6Enabled(),
+				WithNameserverFromCluster(),
+			}
+		} else {
+			// Masquerade: static IPv6 + gateway6
+			ifaceOpts = []NetworkDataInterfaceOption{
+				WithDHCP4Disabled(),
+				WithAddresses(DefaultIPv6CIDR),
+				WithGateway6(DefaultIPv6Gateway),
+				WithNameserverFromCluster(),
+			}
 		}
 	default: // probes ok but neither family — should not happen
 		panic(fmt.Errorf("cluster IPv4/IPv6 probes succeeded but neither family is supported"))
